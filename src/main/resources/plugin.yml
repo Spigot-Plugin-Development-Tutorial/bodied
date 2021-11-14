@@ -1,0 +1,4 @@
+name: Bodied
+version: '${project.version}'
+main: me.kodysimpson.bodied.Bodied
+api-version: 1.17
