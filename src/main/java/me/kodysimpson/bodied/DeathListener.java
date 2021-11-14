@@ -51,7 +51,7 @@ public class DeathListener implements Listener {
 
     }
 
-    protected ServerPlayer spawnCorpse(Player deadPerson) {
+    private ServerPlayer spawnCorpse(Player deadPerson) {
         CraftPlayer craftPlayer = (CraftPlayer) deadPerson;
 
         //NMS representation of the MC server
