@@ -1,38 +1,38 @@
 package me.kodysimpson.bodied.tasks;
 
 import me.kodysimpson.bodied.Bodied;
+import me.kodysimpson.bodied.BodyManager;
 import me.kodysimpson.bodied.data.Body;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.v1_17_R1.entity.CraftPlayer;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 public class BodyRemover extends BukkitRunnable {
 
-    private final List<Body> bodies;
     private final Bodied plugin;
+    private final BodyManager bodyManager;
 
-    public BodyRemover(Bodied plugin) {
+    public BodyRemover(Bodied plugin, BodyManager bodyManager) {
         this.plugin = plugin;
-        this.bodies = new ArrayList<>();
+        this.bodyManager = bodyManager;
     }
 
     @Override
     public void run() {
 
         long now = System.currentTimeMillis();
-        for (Iterator<Body> iterator = bodies.iterator(); iterator.hasNext(); ) {
+        for (Iterator<Body> iterator = bodyManager.getBodies().iterator(); iterator.hasNext(); ) {
             Body body = iterator.next();
-            if (now - body.getWhenDied() >= 5000){
+            if (now - body.getWhenDied() >= 10000){
 
                 iterator.remove();
 
@@ -51,21 +51,25 @@ public class BodyRemover extends BukkitRunnable {
 
                         //see if they are fully underground or not
                         if (!location.add(0, 1, 0).getBlock().isPassable()){
+
+                            bodyManager.deleteNPC(body);
+
                             this.cancel();
                         }
 
                     }
                 }.runTaskTimerAsynchronously(plugin, 0L, 5L);
 
-
                 Player whoDied = Bukkit.getServer().getPlayer(body.getWhoDied());
                 if (whoDied != null){
 
                     //give the items back one by one, if they do not fit then drop at their feet
                     Inventory inventory = whoDied.getInventory();
-                    inventory.addItem(body.getItems()).values().stream().filter(Objects::nonNull).forEach(itemStack -> {
-                        whoDied.getWorld().dropItem(whoDied.getLocation(), itemStack);
-                    });
+                    for (ItemStack itemStack : inventory.addItem(body.getItems()).values()) {
+                        if (itemStack != null) {
+                            whoDied.getWorld().dropItem(whoDied.getLocation(), itemStack);
+                        }
+                    }
 
                     whoDied.sendMessage("Your dead body has rotted and your items have been returned if you died with any.");
                 }
@@ -73,10 +77,5 @@ public class BodyRemover extends BukkitRunnable {
             }
         }
 
-    }
-
-    //getter so the list can be accessed outside
-    public List<Body> getBodies() {
-        return bodies;
     }
 }

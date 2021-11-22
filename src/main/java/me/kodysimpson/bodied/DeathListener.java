@@ -3,11 +3,7 @@ package me.kodysimpson.bodied;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import me.kodysimpson.bodied.data.Body;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundAddPlayerPacket;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
-import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
+import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,18 +12,21 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Location;
-import org.bukkit.Material;
+import org.bukkit.*;
 import org.bukkit.craftbukkit.v1_17_R1.entity.CraftPlayer;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Objects;
 import java.util.UUID;
 
 public class DeathListener implements Listener {
@@ -39,19 +38,60 @@ public class DeathListener implements Listener {
     }
 
     @EventHandler
-    public void onPlayerDeath(PlayerDeathEvent e){
+    public void onPlayerDeath(PlayerDeathEvent e) {
 
         //spawn a corpse where the player died
         Player p = e.getEntity();
         p.sendMessage("Bruh, the goal is to NOT die.");
-        Body body = new Body(p.getUniqueId(), spawnCorpse(p), e.getDrops().toArray(new ItemStack[0]), System.currentTimeMillis());
-        bodied.getBodyRemover().getBodies().add(body);
+        bodied.getBodyManager().getBodies().add(spawnCorpse(p));
 
         e.getDrops().clear();
 
     }
 
-    private ServerPlayer spawnCorpse(Player deadPerson) {
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractAtEntityEvent e) {
+
+        if (e.getRightClicked() instanceof ArmorStand as) {
+            for (Iterator<Body> iterator = bodied.getBodyManager().getBodies().iterator(); iterator.hasNext(); ) {
+                Body body = iterator.next();
+                if (body.getArmorStands().contains(as)) {
+
+                    //they right clicked a body
+                    spitItems(e.getPlayer(), body);
+
+                    //play sound
+                    e.getPlayer().playSound(e.getPlayer().getLocation(), Sound.BLOCK_ENDER_CHEST_OPEN, 1.0f, 1.0f);
+
+                    bodied.getBodyManager().deleteNPC(body);
+
+                    iterator.remove();
+                }
+            }
+        }
+
+
+    }
+
+    private void spitItems(Player whoClicked, Body body) {
+
+        double y = 0.5;
+        for (ItemStack itemStack : body.getItems()) {
+            if (itemStack != null) {
+                whoClicked.getWorld().dropItem(body.getNpc().getBukkitEntity().getLocation().clone().add(-1, y, 0), itemStack);
+                y = y + 0.5;
+            }
+        }
+
+    }
+
+    private Body spawnCorpse(Player deadPerson) {
+
+        Body body = new Body();
+        body.setWhoDied(deadPerson.getUniqueId());
+        body.setItems(Arrays.stream(deadPerson.getInventory().getContents()).filter(Objects::nonNull).toArray(ItemStack[]::new));
+        body.setWhenDied(System.currentTimeMillis());
+
         CraftPlayer craftPlayer = (CraftPlayer) deadPerson;
 
         //NMS representation of the MC server
@@ -63,28 +103,33 @@ public class DeathListener implements Listener {
         ServerPlayer npc = new ServerPlayer(server, level, new GameProfile(UUID.randomUUID(), ChatColor.stripColor(" ")));
         //Set their position. They will be here when we call the packets below to spawn them
 
-        //spawn them and spawn them on ground level
-
         //find the proper place to put the body
-        System.out.println(deadPerson.getLocation().getBlock().getType());
         Location pl = deadPerson.getLocation().getBlock().getLocation().clone();
-        System.out.println(pl);
-        while(pl.getBlock().getType() == Material.AIR){
+        while (pl.getBlock().getType() == Material.AIR) {
             pl = pl.subtract(0, 1, 0);
         }
 
         npc.setPos(deadPerson.getLocation().getX(), pl.getY() + 1, deadPerson.getLocation().getZ());
         npc.setPose(Pose.SLEEPING);
 
-        //default skin data
-        String signature = "ArwoD4sGhthC32Qaq1oSwNOWPciJN54mLj+Tq0tZBUMCaw7Gnpj6W9HJhLrax6gVs8X3O5cWUrgLbAIF8uelb5jLdUpm9ZFsAFUo/MtE3oqCXBjoXw8+Wn8y8WR1UAXwv0ts+C6OSyOfLGk0tR7Jmkac6G7bUKYOAMFtCGcppdmoxvhALHPkcsPmdlE8SsHhOVDBp+SE9SBA0V5Z2YDTua34bLdCh4jHibb9x6D8yLxos5ksqcUzsLW9HZ6gqt29GqRD3+M2q1VyXyOjQCR1MD/5A0WfFAFBtExWPRn4V8Fl8a6+814a84H6apaoIN0e6rZHC9ArLEbfSStS54YbjFZ5jfUHx4jkyg0n16B14Z7KLVRmWJjUPtICWaW7zlOOzzq+ZkV1fckVmXEA0Ri349DnWMSGU44nkgPsjD5PL9PLdDqhWqXQGL9f3C+XmUC+5WWdE1cA2W+ZrTN0mZajlkmcwYL0priAZZfzubhVV6PqWAaM9phgaoK7s5oQc6ruaXObauGZvxZ2p+LDx8A+AKnpxSPvjE+fVoOZUAvzVIhwXkFo8Y7+lJi29GjNS8f+fZctPivnABnK2oHXVapvdWlOfpTg/Y8cgc+GHhsvY82f9p7tyFAjV59Ps2G3TDjNbxm7iRaNs4MBUf2e8+mQFt/MbbblCfDBMUOprV0vjks=";
-        String texture = "ewogICJ0aW1lc3RhbXAiIDogMTYzMzI2Mzg5NjIyNSwKICAicHJvZmlsZUlkIiA6ICIwNjlhNzlmNDQ0ZTk0NzI2YTViZWZjYTkwZTM4YWFmNSIsCiAgInByb2ZpbGVOYW1lIiA6ICJOb3RjaCIsCiAgInNpZ25hdHVyZVJlcXVpcmVkIiA6IHRydWUsCiAgInRleHR1cmVzIiA6IHsKICAgICJTS0lOIiA6IHsKICAgICAgInVybCIgOiAiaHR0cDovL3RleHR1cmVzLm1pbmVjcmFmdC5uZXQvdGV4dHVyZS8yOTIwMDlhNDkyNWI1OGYwMmM3N2RhZGMzZWNlZjA3ZWE0Yzc0NzJmNjRlMGZkYzMyY2U1NTIyNDg5MzYyNjgwIgogICAgfQogIH0KfQ==";
+        ArmorStand armorStand = (ArmorStand) deadPerson.getWorld().spawnEntity(npc.getBukkitEntity().getLocation(), EntityType.ARMOR_STAND);
+        armorStand.setSmall(true);
+        armorStand.setInvulnerable(true);
+        armorStand.setInvisible(true);
+        ArmorStand armorStand2 = (ArmorStand) deadPerson.getWorld().spawnEntity(npc.getBukkitEntity().getLocation().subtract(1, 0, 0), EntityType.ARMOR_STAND);
+        armorStand2.setSmall(true);
+        armorStand2.setInvulnerable(true);
+        armorStand2.setInvisible(true);
+        ArmorStand armorStand3 = (ArmorStand) deadPerson.getWorld().spawnEntity(npc.getBukkitEntity().getLocation().subtract(2, 0, 0), EntityType.ARMOR_STAND);
+        armorStand3.setSmall(true);
+        armorStand3.setInvulnerable(true);
+        armorStand3.setInvisible(true);
 
         GameProfile gameProfile = ((CraftPlayer) deadPerson).getHandle().getGameProfile();
         Property property = (Property) gameProfile.getProperties().get("textures").toArray()[0];
 
-        signature = property.getSignature();
-        texture = property.getValue();
+        String signature = property.getSignature();
+        String texture = property.getValue();
 
         npc.getGameProfile().getProperties().put("textures", new Property("textures", texture, signature));
 
@@ -104,7 +149,7 @@ public class DeathListener implements Listener {
             //add the team
             ps.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true));
 
-            new BukkitRunnable(){
+            new BukkitRunnable() {
                 @Override
                 public void run() {
                     ps.send(new ClientboundPlayerInfoPacket(ClientboundPlayerInfoPacket.Action.REMOVE_PLAYER, npc));
@@ -114,7 +159,12 @@ public class DeathListener implements Listener {
 
         });
 
-        return npc;
+        body.setNpc(npc);
+        body.getArmorStands().add(armorStand);
+        body.getArmorStands().add(armorStand2);
+        body.getArmorStands().add(armorStand3);
+
+        return body;
     }
 
 }
